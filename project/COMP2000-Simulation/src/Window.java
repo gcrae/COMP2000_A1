@@ -48,4 +48,8 @@ public class Window extends JFrame{
         ground.revalidate();
         ground.repaint();
     }
+
+    public Sky getSky(){
+        return this.sky;
+    }
 }

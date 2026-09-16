@@ -1,7 +1,8 @@
-import java.awt.*;
-import java.util.Timer;
+import java.awt.Color;
+import java.awt.Point;
 import java.util.TimerTask;
-import javax.swing.*;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 
 public abstract class Plant extends JPanel implements Growable {
     protected final Sky sky;
@@ -18,8 +19,9 @@ public abstract class Plant extends JPanel implements Growable {
     protected int spreadRadius;
     protected Window window;
 
-    private Timer tickTimer;
-    private Timer growTimer;
+    private java.util.Timer tickTimer;
+    private java.util.Timer growTimer;
+    private boolean removalScheduled = false;
 
     public Plant(Point p, Window window, Sky sky) {
         this.position = p;
@@ -35,7 +37,7 @@ public abstract class Plant extends JPanel implements Growable {
     }
 
     private void startTimers() {
-        tickTimer = new Timer(true);
+        tickTimer = new java.util.Timer(true);
         tickTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -46,7 +48,7 @@ public abstract class Plant extends JPanel implements Growable {
             }
         }, 0, 25);
 
-        growTimer = new Timer(true);
+        growTimer = new java.util.Timer(true);
         growTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -55,17 +57,35 @@ public abstract class Plant extends JPanel implements Growable {
         }, GROWTH_INTERVAL_MS, GROWTH_INTERVAL_MS);
     }
 
-    private void advanceGrowth() {
-        if (LifeStage.isDead(growthState)) return;
+    private void stopTimers() {
+        if (tickTimer != null) {
+            tickTimer.cancel();
+            tickTimer = null;
+        }
+        if (growTimer != null) {
+            growTimer.cancel();
+            growTimer = null;
+        }
+    }
 
-        double environmentMultiplier = 1.0;
+    private void advanceGrowth() {
+        if (LifeStage.isDead(growthState)) {
+            stopTimers();
+            scheduleRemoval();
+            return;
+        }
+
+        double rawMultiplier = 1.0;
         try {
-            environmentMultiplier = sky.getGrowthMultiplier();
+            rawMultiplier = sky.getGrowthMultiplier();
         } catch (InvalidWeatherException e) {
             e.printStackTrace();
         }
 
-        growthProgress += (GROWTH_INTERVAL_MS * environmentMultiplier) / MS_PER_STAGE;
+        double effectiveMultiplier = environmentSensitivity(rawMultiplier);
+        double effectiveMsPerStage = MS_PER_STAGE / stageDurationMultiplier();
+
+        growthProgress += (GROWTH_INTERVAL_MS * effectiveMultiplier) / effectiveMsPerStage;
         if (growthProgress >= 1.0) {
             growthProgress = 0.0;
             advanceStage();
@@ -79,6 +99,9 @@ public abstract class Plant extends JPanel implements Growable {
         if (growthState < LifeStage.DEAD) {
             growthState++;
             LifeStage.validate(growthState);
+            if (LifeStage.isDead(growthState)) {
+                stopTimers();
+            }
         }
     }
 
@@ -109,15 +132,53 @@ public abstract class Plant extends JPanel implements Growable {
             case LifeStage.DEAD -> {
                 this.setBackground(Color.BLACK);
                 deadAction();
+                scheduleRemoval();
             }
             default -> throw new IllegalStateException("Unrecognized lifecycle stage: " + growthState);
         }
+    }
+
+    private void scheduleRemoval() {
+        if (removalScheduled) return;
+        removalScheduled = true;
+
+        stopTimers();
+
+        javax.swing.Timer removalTimer = new javax.swing.Timer(3000, e -> {
+            if (window != null) {
+                window.removeFromGround(this);
+                window.refresh();
+            }
+            onRemoved();
+        });
+        removalTimer.setRepeats(false);
+        removalTimer.start();
     }
 
     @Override
     public void grow() {
         advanceStage();
     }
+
+    protected double stageDurationMultiplier() {
+        return 1.0;
+    }
+
+    protected double environmentSensitivity(double environmentMultiplier) {
+        return environmentMultiplier;
+    }
+
+    protected abstract int getMaxPopulation();
+    protected abstract boolean isAtCapacity();
+    protected abstract void onRemoved();
+
+    protected void seedAction() {}
+    protected void seedlingAction() {}
+    protected void juvenileAction() {}
+    protected void adultAction() {}
+    protected void deadAction() {}
+
+    public abstract void spread();
 
     protected double getGrowthProgress() {
         return growthProgress;
@@ -126,12 +187,6 @@ public abstract class Plant extends JPanel implements Growable {
     protected int getGrowthState() {
         return growthState;
     }
-
-    public abstract void seedAction();
-    public abstract void seedlingAction();
-    public abstract void juvenileAction();
-    public abstract void adultAction();
-    public abstract void deadAction();
 
     public Point getPosition() {
         return position;

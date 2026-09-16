@@ -6,14 +6,14 @@ public abstract class Flower extends Plant {
     }
 
     public void bloom() {
-        this.setBackground(Color.RED);      
+        this.setBackground(Color.RED);
+    }
+
+    @Override
+    protected void adultAction() {
+        bloom();
         if ((int) (Math.random() * 100) == 0) {
             spread();
         }
-    }  
-
-    @Override
-    public void adultAction() {
-        bloom();
     }
 }

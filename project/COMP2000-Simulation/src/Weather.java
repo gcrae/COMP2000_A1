@@ -1,5 +1,6 @@
 public final class Weather {
     
+    // Prevent instantiation
     private Weather() {}
     
     public static final int SUNNY = 0;
